@@ -1,32 +1,25 @@
-from fastapi import Request, HTTPException, status
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+#from fastapi import Depends, HTTPException, status
+from fastapi import HTTPException, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from starlette.status import HTTP_403_FORBIDDEN
 
+from fastapi import Security
+from fastapi.security import HTTPBearer
 
-# Replace with a more secure method later (e.g., from .env)
-API_TOKEN = "my_secure_token_123"  # we can generate a random one using uuid or secrets
+bearer_scheme = HTTPBearer()
 
-def verify_token(request: Request):
-    token = request.headers.get("Authorization")
-    if not token or token.replace("Bearer ", "") != API_TOKEN:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing token",
-        )
-    return request
+#security = HTTPBearer()
 
-security = HTTPBearer()
+from fastapi import Header, HTTPException, Depends
 
-VALID_TOKENS = {"token123", "mysecuretoken"}  # Your valid tokens
+VALID_TOKENS = ["my_secure_token_123"]  # or load from file/db/env
 
-def auth_required(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-):
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(bearer_scheme)):
     token = credentials.credentials
-    if token not in VALID_TOKENS:
+    # Replace with your actual logic (static check shown here)
+    if token != "my_secure_token_123":
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing token"
+            status_code=HTTP_403_FORBIDDEN,
+            detail="Invalid or expired token"
         )
-    return token
 

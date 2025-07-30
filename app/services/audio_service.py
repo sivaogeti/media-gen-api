@@ -6,6 +6,7 @@ from app.db import SessionLocal
 from app.models import MediaGeneration
 import logging
 logger = logging.getLogger(__name__)
+import uuid
 
 def generate_audio_file(text: str, voice: str = "default", language: str = "en") -> str:
     try:

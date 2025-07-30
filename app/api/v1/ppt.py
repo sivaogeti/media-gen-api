@@ -14,7 +14,7 @@ class Slide(BaseModel):
 class PPTInput(BaseModel):
     slides: List[Slide]
 
-@router.post("/generate", dependencies=[Depends(verify_token)])
+@router.post("/generate")
 def generate_ppt(payload: PPTInput):
     filename = generate_ppt_file([slide.dict() for slide in payload.slides])
     return {

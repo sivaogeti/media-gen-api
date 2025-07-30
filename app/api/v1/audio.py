@@ -1,25 +1,27 @@
-# app/api/v1/audio.py
-from fastapi import APIRouter, HTTPException, Query, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Body
 from pydantic import BaseModel
-from app.services.audio_service import generate_audio_file  # ✅ Only this import
+from app.services.audio_service import generate_audio_file
 from app.auth.auth import verify_token
-
+import uuid  # ✅ Add this
+import os    # ✅ Also needed
+from gtts import gTTS  # ✅ Needed if you're calling it directly here
 
 router = APIRouter()
 
-class AudioInput(BaseModel):
+class AudioRequest(BaseModel):
     text: str
     voice: str = "default"
     language: str = "en"
 
-@router.post("/generate", dependencies=[Depends(verify_token)])
-def generate_audio_endpoint(payload: AudioInput):
+@router.post("/generate")
+def generate_audio_endpoint(payload: AudioRequest):
     try:
-        file_path = generate_audio_file(payload.text, payload.voice, payload.language)
-
+        filename = f"audio_{uuid.uuid4().hex}.mp3"
+        file_path = f"generated_audio/{filename}"
+        os.makedirs("generated_audio", exist_ok=True)
+        tts = gTTS(text=payload.text, lang=payload.language)
+        tts.save(file_path)
         return {
-            "status": "success",
-            "type": "audio",
             "file_path": file_path,
             "download_url": f"/api/v1/download?file_path={file_path}"
         }

@@ -18,6 +18,10 @@ def generate_image_file(prompt: str, style: str = "default") -> str:
         with open(os.path.join(folder, filename), "w") as f:
             f.write(f"Prompt: {prompt}\nStyle: {style}")
         logger.info(f"Generated Image: {filename}")
+        if os.path.isfile(output_path):
+            print(f"✅ Image created: {output_path}, size = {os.path.getsize(output_path)} bytes")
+        else:
+            print(f"❌ Image file not found at: {output_path}")
         return filename
     except:
         logger.error(f"Image Geneartion failed: {str(e)}")
