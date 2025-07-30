@@ -40,9 +40,16 @@ if tab == "Text to Audio":
         with st.spinner("Generating audio..."):
             r = requests.post(f"{API_BASE}/audio/generate", json={"text": text, "voice": voice}, headers=HEADERS)
             if r.status_code == 200:
-                render_media(r.content, "audio", "Generated Audio")
+                data = r.json()
+                download_url = f"{API_BASE}{data['download_url']}"
+                audio_resp = requests.get(download_url, headers=HEADERS)
+                if audio_resp.status_code == 200:
+                    render_media(audio_resp.content, "audio", "Generated Audio")
+                else:
+                    st.error("❌ Failed to download audio file.")
             else:
                 st.error(f"❌ Failed: {r.json().get('detail')}")
+
 
 elif tab == "Text to Image":
     st.subheader("🖼️ Text to Image")
