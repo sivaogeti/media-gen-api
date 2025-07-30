@@ -1,47 +1,100 @@
-# video_enhancer.py
+# streamlit_ui.py
+import streamlit as st
+import requests
+import base64
+import tempfile
+from backend.subtitle_utils import generate_srt_from_text, enhance_video_with_subtitles_and_bgm
 
-from moviepy.editor import TextClip, CompositeVideoClip, AudioFileClip, VideoFileClip
-from moviepy.video.tools.subtitles import SubtitlesClip
-from gtts import gTTS
-from datetime import timedelta
-import os
+st.set_page_config(
+    page_title="Prompta - Text to Media Generator",
+    page_icon="🎙️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+st.title("🎙️🖼️🎞️ Prompta - Text to Media Generator")
 
-# Constants
-FONT = "Arial"
-FONT_SIZE = 36
-FONT_COLOR = "white"
-BG_COLOR = "black"
-BGM_PATH = "default_bgm.mp3"  # bundled with your repo
+API_BASE = "http://localhost:8000"
 
-def generate_srt_from_text(text, output_srt_path, duration_per_line=4):
-    """Generate .srt subtitles file from multi-line text."""
-    lines = text.strip().split("\n")
-    with open(output_srt_path, "w", encoding="utf-8") as f:
-        for i, line in enumerate(lines):
-            start_time = timedelta(seconds=i * duration_per_line)
-            end_time = timedelta(seconds=(i + 1) * duration_per_line)
-            f.write(f"{i+1}\n")
-            f.write(f"{str(start_time)[:-3].replace('.', ',')} --> {str(end_time)[:-3].replace('.', ',')}\n")
-            f.write(f"{line}\n\n")
+def render_media(file_bytes, media_type, label):
+    b64 = base64.b64encode(file_bytes).decode()
+    if media_type == "audio":
+        st.audio(f"data:audio/wav;base64,{b64}", format="audio/wav")
+    elif media_type == "video":
+        st.video(f"data:video/mp4;base64,{b64}")
+    elif media_type == "image":
+        st.image(file_bytes, caption=label, use_column_width=True)
 
-def create_subtitle_clips_from_srt(srt_path):
-    """Convert .srt to a SubtitlesClip usable in moviepy."""
-    generator = lambda txt: TextClip(txt, font=FONT, fontsize=FONT_SIZE, color=FONT_COLOR, bg_color=BG_COLOR)
-    return SubtitlesClip(srt_path, generator)
+st.sidebar.header("🛠️ Settings")
+TOKEN = st.sidebar.text_input("🔑 API Token", type="password")
+HEADERS = {"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}
 
-def enhance_video_with_subtitles_and_bgm(input_video_path, output_video_path, srt_path, bgm_path=BGM_PATH):
-    video = VideoFileClip(input_video_path)
-    subs = create_subtitle_clips_from_srt(srt_path)
-    video = CompositeVideoClip([video, subs.set_position(('center','bottom'))])
+tab = st.sidebar.radio("Select Task", ["Text to Audio", "Text to Image", "Text to Video"])
 
-    if os.path.exists(bgm_path):
-        bgm = AudioFileClip(bgm_path).volumex(0.2)
-        bgm = bgm.set_duration(video.duration)
-        video = video.set_audio(bgm)
+if tab == "Text to Audio":
+    st.subheader("🎤 Text to Audio")
+    text = st.text_area("Enter text")
+    voice = st.selectbox("Choose voice/language", ["en-US", "hi-IN", "te-IN", "ta-IN"])
 
-    video.write_videofile(output_video_path, codec="libx264", audio_codec="aac")
+    if st.button("🔊 Generate Audio"):
+        with st.spinner("Generating audio..."):
+            r = requests.post(f"{API_BASE}/audio/generate", json={"text": text, "voice": voice}, headers=HEADERS)
+            if r.status_code == 200:
+                render_media(r.content, "audio", "Generated Audio")
+            else:
+                st.error(f"❌ Failed: {r.json().get('detail')}")
 
-# Example usage:
-# text = """Hello there\nThis is an AI-generated video\nThank you for watching"""
-# generate_srt_from_text(text, "output.srt")
-# enhance_video_with_subtitles_and_bgm("input.mp4", "final_output.mp4", "output.srt")
+elif tab == "Text to Image":
+    st.subheader("🖼️ Text to Image")
+    prompt = st.text_area("Enter image prompt")
+    model = st.selectbox("Choose model", ["sdxl", "deepfloyd", "kandinsky"])
+
+    if st.button("🧠 Generate Image"):
+        with st.spinner("Generating image..."):
+            r = requests.post(f"{API_BASE}/image/generate", json={"prompt": prompt, "model": model}, headers=HEADERS)
+            if r.status_code == 200:
+                render_media(r.content, "image", "Generated Image")
+            else:
+                st.error(f"❌ Failed: {r.json().get('detail')}")
+
+elif tab == "Text to Video":
+    st.subheader("🎞️ Text to Video")
+    prompt = st.text_area("Enter video prompt")
+    tone = st.selectbox("Tone", ["formal", "casual", "emotional", "documentary"])
+    domain = st.selectbox("Domain", ["health", "education", "governance", "entertainment"])
+    environment = st.selectbox("Environment", ["urban", "rural", "nature", "futuristic"])
+
+    transcript = st.text_area("Transcript (optional - for subtitles)", height=100)
+    enhance = st.checkbox("✨ Add Subtitles and Background Music")
+
+    if st.button("🎬 Generate Video"):
+        with st.spinner("Generating video..."):
+            r = requests.post(
+                f"{API_BASE}/video/generate",
+                json={"prompt": prompt, "tone": tone, "domain": domain, "environment": environment},
+                headers=HEADERS
+            )
+            if r.status_code == 200:
+                video_bytes = r.content
+                if enhance and transcript:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_vid:
+                        tmp_vid.write(video_bytes)
+                        tmp_vid_path = tmp_vid.name
+
+                    srt_path = generate_srt_from_text(transcript, output_path="streamlit_subs.srt")
+                    enhanced_path = "streamlit_final_video.mp4"
+                    enhance_video_with_subtitles_and_bgm(
+                        video_path=tmp_vid_path,
+                        srt_path=srt_path,
+                        bgm_path="default_bgm.mp3",
+                        output_path=enhanced_path
+                    )
+
+                    with open(enhanced_path, "rb") as f:
+                        render_media(f.read(), "video", "Enhanced Video")
+                else:
+                    render_media(video_bytes, "video", "Generated Video")
+            else:
+                st.error(f"❌ Failed: {r.json().get('detail')}")
+
+st.sidebar.markdown("---")
+st.sidebar.info("Built with ❤️ for AI GovTech Challenge 2025")
