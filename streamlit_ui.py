@@ -2,18 +2,19 @@
 import streamlit as st
 import requests
 import base64
+import tempfile
+from backend.subtitle_utils import generate_srt_from_text, enhance_video_with_subtitles_and_bgm
 
 st.set_page_config(
     page_title="Prompta - Text to Media Generator",
-    page_icon="🎙️",  # You can replace with uploaded image: 'logo/favicon.ico'
+    page_icon="🎙️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 st.title("🎙️🖼️🎞️ Prompta - Text to Media Generator")
 
-API_BASE = "http://localhost:8000"  # change if deployed
+API_BASE = "http://localhost:8000"
 
-# Helper to play audio/video in Streamlit
 def render_media(file_bytes, media_type, label):
     b64 = base64.b64encode(file_bytes).decode()
     if media_type == "audio":
@@ -23,19 +24,17 @@ def render_media(file_bytes, media_type, label):
     elif media_type == "image":
         st.image(file_bytes, caption=label, use_column_width=True)
 
-# Sidebar inputs
 st.sidebar.header("🛠️ Settings")
 TOKEN = st.sidebar.text_input("🔑 API Token", type="password")
 HEADERS = {"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}
 
-# Tabs
 tab = st.sidebar.radio("Select Task", ["Text to Audio", "Text to Image", "Text to Video"])
 
 if tab == "Text to Audio":
     st.subheader("🎤 Text to Audio")
     text = st.text_area("Enter text")
     voice = st.selectbox("Choose voice/language", ["en-US", "hi-IN", "te-IN", "ta-IN"])
-    
+
     if st.button("🔊 Generate Audio"):
         with st.spinner("Generating audio..."):
             r = requests.post(f"{API_BASE}/audio/generate", json={"text": text, "voice": voice}, headers=HEADERS)
@@ -64,6 +63,9 @@ elif tab == "Text to Video":
     domain = st.selectbox("Domain", ["health", "education", "governance", "entertainment"])
     environment = st.selectbox("Environment", ["urban", "rural", "nature", "futuristic"])
 
+    transcript = st.text_area("Transcript (optional - for subtitles)", height=100)
+    enhance = st.checkbox("✨ Add Subtitles and Background Music")
+
     if st.button("🎬 Generate Video"):
         with st.spinner("Generating video..."):
             r = requests.post(
@@ -72,7 +74,25 @@ elif tab == "Text to Video":
                 headers=HEADERS
             )
             if r.status_code == 200:
-                render_media(r.content, "video", "Generated Video")
+                video_bytes = r.content
+                if enhance and transcript:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_vid:
+                        tmp_vid.write(video_bytes)
+                        tmp_vid_path = tmp_vid.name
+
+                    srt_path = generate_srt_from_text(transcript, output_path="streamlit_subs.srt")
+                    enhanced_path = "streamlit_final_video.mp4"
+                    enhance_video_with_subtitles_and_bgm(
+                        video_path=tmp_vid_path,
+                        srt_path=srt_path,
+                        bgm_path="default_bgm.mp3",
+                        output_path=enhanced_path
+                    )
+
+                    with open(enhanced_path, "rb") as f:
+                        render_media(f.read(), "video", "Enhanced Video")
+                else:
+                    render_media(video_bytes, "video", "Generated Video")
             else:
                 st.error(f"❌ Failed: {r.json().get('detail')}")
 
