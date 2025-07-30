@@ -1,100 +1,77 @@
-# streamlit_ui.py
-import streamlit as st
-import requests
-import base64
-import tempfile
-from backend.subtitle_utils import generate_srt_from_text, enhance_video_with_subtitles_and_bgm
+from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, AudioFileClip, concatenate_audioclips
+import os
+from typing import List, Tuple
 
-st.set_page_config(
-    page_title="Prompta - Text to Media Generator",
-    page_icon="🎙️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-st.title("🎙️🖼️🎞️ Prompta - Text to Media Generator")
 
-API_BASE = "http://localhost:8000"
+def export_srt(transcript: List[str], duration: float, output_path: str):
+    """
+    Exports transcript as a .srt subtitle file assuming equal spacing.
+    """
+    lines = []
+    segment_duration = duration / len(transcript)
+    
+    for idx, line in enumerate(transcript):
+        start_time = segment_duration * idx
+        end_time = segment_duration * (idx + 1)
 
-def render_media(file_bytes, media_type, label):
-    b64 = base64.b64encode(file_bytes).decode()
-    if media_type == "audio":
-        st.audio(f"data:audio/wav;base64,{b64}", format="audio/wav")
-    elif media_type == "video":
-        st.video(f"data:video/mp4;base64,{b64}")
-    elif media_type == "image":
-        st.image(file_bytes, caption=label, use_column_width=True)
+        def format_time(t):
+            h = int(t // 3600)
+            m = int((t % 3600) // 60)
+            s = int(t % 60)
+            ms = int((t % 1) * 1000)
+            return f"{h:02}:{m:02}:{s:02},{ms:03}"
 
-st.sidebar.header("🛠️ Settings")
-TOKEN = st.sidebar.text_input("🔑 API Token", type="password")
-HEADERS = {"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}
+        lines.append(f"{idx+1}")
+        lines.append(f"{format_time(start_time)} --> {format_time(end_time)}")
+        lines.append(line.strip())
+        lines.append("")  # Empty line for spacing
 
-tab = st.sidebar.radio("Select Task", ["Text to Audio", "Text to Image", "Text to Video"])
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
 
-if tab == "Text to Audio":
-    st.subheader("🎤 Text to Audio")
-    text = st.text_area("Enter text")
-    voice = st.selectbox("Choose voice/language", ["en-US", "hi-IN", "te-IN", "ta-IN"])
 
-    if st.button("🔊 Generate Audio"):
-        with st.spinner("Generating audio..."):
-            r = requests.post(f"{API_BASE}/audio/generate", json={"text": text, "voice": voice}, headers=HEADERS)
-            if r.status_code == 200:
-                render_media(r.content, "audio", "Generated Audio")
-            else:
-                st.error(f"❌ Failed: {r.json().get('detail')}")
+def add_subtitles_and_bgm(
+    video_path: str,
+    transcript: List[str],
+    output_path: str = "final_output.mp4",
+    bgm_path: str = None,
+    subtitle_font: str = "Arial",
+    subtitle_size: int = 24,
+    subtitle_color: str = "white",
+    subtitle_position: Tuple[int, int] = ("center", "bottom")
+):
+    """
+    Adds subtitles and optional background music to a video.
+    """
 
-elif tab == "Text to Image":
-    st.subheader("🖼️ Text to Image")
-    prompt = st.text_area("Enter image prompt")
-    model = st.selectbox("Choose model", ["sdxl", "deepfloyd", "kandinsky"])
+    clip = VideoFileClip(video_path)
+    duration = clip.duration
+    segment_duration = duration / len(transcript)
+    subtitle_clips = []
 
-    if st.button("🧠 Generate Image"):
-        with st.spinner("Generating image..."):
-            r = requests.post(f"{API_BASE}/image/generate", json={"prompt": prompt, "model": model}, headers=HEADERS)
-            if r.status_code == 200:
-                render_media(r.content, "image", "Generated Image")
-            else:
-                st.error(f"❌ Failed: {r.json().get('detail')}")
+    for i, line in enumerate(transcript):
+        txt = TextClip(
+            line,
+            fontsize=subtitle_size,
+            font=subtitle_font,
+            color=subtitle_color,
+            method='caption',
+            size=(clip.w * 0.8, None)  # 80% width
+        ).set_position(subtitle_position).set_duration(segment_duration).set_start(i * segment_duration)
 
-elif tab == "Text to Video":
-    st.subheader("🎞️ Text to Video")
-    prompt = st.text_area("Enter video prompt")
-    tone = st.selectbox("Tone", ["formal", "casual", "emotional", "documentary"])
-    domain = st.selectbox("Domain", ["health", "education", "governance", "entertainment"])
-    environment = st.selectbox("Environment", ["urban", "rural", "nature", "futuristic"])
+        subtitle_clips.append(txt)
 
-    transcript = st.text_area("Transcript (optional - for subtitles)", height=100)
-    enhance = st.checkbox("✨ Add Subtitles and Background Music")
+    final_video = CompositeVideoClip([clip, *subtitle_clips])
 
-    if st.button("🎬 Generate Video"):
-        with st.spinner("Generating video..."):
-            r = requests.post(
-                f"{API_BASE}/video/generate",
-                json={"prompt": prompt, "tone": tone, "domain": domain, "environment": environment},
-                headers=HEADERS
-            )
-            if r.status_code == 200:
-                video_bytes = r.content
-                if enhance and transcript:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_vid:
-                        tmp_vid.write(video_bytes)
-                        tmp_vid_path = tmp_vid.name
+    if bgm_path and os.path.exists(bgm_path):
+        bgm = AudioFileClip(bgm_path).volumex(0.2).set_duration(duration)
+        original_audio = clip.audio
+        if original_audio:
+            mixed_audio = original_audio.volumex(1.0).audio_fadein(0.5).audio_fadeout(0.5)
+            final_audio = CompositeVideoClip([mixed_audio.set_start(0), bgm.set_start(0)]).audio
+        else:
+            final_audio = bgm
+        final_video = final_video.set_audio(final_audio)
 
-                    srt_path = generate_srt_from_text(transcript, output_path="streamlit_subs.srt")
-                    enhanced_path = "streamlit_final_video.mp4"
-                    enhance_video_with_subtitles_and_bgm(
-                        video_path=tmp_vid_path,
-                        srt_path=srt_path,
-                        bgm_path="default_bgm.mp3",
-                        output_path=enhanced_path
-                    )
+    final_video.write_videofile(output_path, codec="libx264", audio_codec="aac")
 
-                    with open(enhanced_path, "rb") as f:
-                        render_media(f.read(), "video", "Enhanced Video")
-                else:
-                    render_media(video_bytes, "video", "Generated Video")
-            else:
-                st.error(f"❌ Failed: {r.json().get('detail')}")
-
-st.sidebar.markdown("---")
-st.sidebar.info("Built with ❤️ for AI GovTech Challenge 2025")
