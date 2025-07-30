@@ -3,8 +3,13 @@ import streamlit as st
 import requests
 import base64
 
-st.set_page_config(page_title="AI Media Generator", layout="wide")
-st.title("🎙️🖼️🎞️ AI Media Generator")
+st.set_page_config(
+    page_title="Prompta - Text to Media Generator",
+    page_icon="🎙️",  # You can replace with uploaded image: 'logo/favicon.ico'
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+st.title("🎙️🖼️🎞️ Prompta - Text to Media Generator")
 
 API_BASE = "http://localhost:8000"  # change if deployed
 
