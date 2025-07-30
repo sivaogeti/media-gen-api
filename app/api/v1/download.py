@@ -12,7 +12,8 @@ def download_file(file_path: str = Query(..., description="Relative path from pr
 
     # Absolute path (from project root)
     abs_path = os.path.join(os.getcwd(), file_path)
-
+    
+    print("Looking for file at:", abs_path)
     if not os.path.isfile(abs_path):
         raise HTTPException(status_code=404, detail="File not found")
 
