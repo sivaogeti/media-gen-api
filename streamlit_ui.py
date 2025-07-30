@@ -13,7 +13,8 @@ st.set_page_config(
 )
 st.title("🎙️🖼️🎞️ Prompta - Text to Media Generator")
 
-API_BASE = "http://localhost:8000"
+#API_BASE = "http://localhost:8000"
+API_BASE = "https://2255d6a4793d.ngrok-free.app"
 
 def render_media(file_bytes, media_type, label):
     b64 = base64.b64encode(file_bytes).decode()
