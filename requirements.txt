@@ -7,6 +7,8 @@ nltk
 sentry-sdk
 moviepy==1.0.3
 srt
+fastapi
+uvicorn
 
 # Required moviepy dependencies
 imageio
