@@ -1,9 +1,15 @@
 streamlit
 requests
-pillow
+pillow==9.5.0
 sentence_transformers
 scikit-learn
 nltk
 sentry-sdk
-moviepy 
+moviepy==1.0.3
 srt
+
+# Required moviepy dependencies
+imageio
+imageio-ffmpeg
+decorator
+tqdm
