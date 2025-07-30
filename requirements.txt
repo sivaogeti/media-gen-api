@@ -5,3 +5,5 @@ sentence_transformers
 scikit-learn
 nltk
 sentry-sdk
+moviepy 
+srt
