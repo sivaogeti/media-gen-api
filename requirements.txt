@@ -20,3 +20,4 @@ decorator
 tqdm
 python-multipart
 opencv-python-headless
+python-dotenv
