@@ -1,54 +1,41 @@
 from fastapi import APIRouter, HTTPException, Depends, Body
+from fastapi.responses import Response
 from pydantic import BaseModel
 from app.auth.auth import verify_token
-from PIL import Image, ImageDraw, ImageFont
-from datetime import datetime
+import requests
 import os
+from pydantic import BaseModel
+from dotenv import load_dotenv
+load_dotenv()
 
+
+# ✅ Define router
 router = APIRouter()
 
+# ✅ Define Request schema
 class ImageRequest(BaseModel):
     prompt: str
     style: str = "default"
 
-class ImageResponse(BaseModel):
-    message: str
-    filename: str
-    download_url: str
+UNSPLASH_ACCESS_KEY = os.getenv("UNSPLASH_ACCESS_KEY")  # store this in .env
+print(f"unsplash key is: {UNSPLASH_ACCESS_KEY}")
 
-@router.post("/generate", response_model=ImageResponse)
+# ✅ Endpoint
+@router.post("/generate")
 def generate_image_file_endpoint(
     data: ImageRequest = Body(...),
     token: str = Depends(verify_token)
 ):
-    prompt = data.prompt
-    style = data.style
-    filename = f"image_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-    folder = "generated/image"
-    os.makedirs(folder, exist_ok=True)
-    output_path = os.path.join(folder, filename)
+    query = f"{data.prompt} {data.style}"
+    url = f"https://api.unsplash.com/photos/random?query={query}&client_id={UNSPLASH_ACCESS_KEY}&orientation=landscape"
 
     try:
-        img = Image.new("RGB", (768, 512), color="white")
-        draw = ImageDraw.Draw(img)
-
-        try:
-            font = ImageFont.truetype("arial.ttf", 20)
-        except:
-            font = ImageFont.load_default()
-
-        draw.text((20, 20), f"Prompt: {prompt}", fill="black", font=font)
-        draw.text((20, 60), f"Style: {style}", fill="gray", font=font)
-
-        img.save(output_path, format="PNG")
-
-        print(f"✅ Image created: {output_path}, size = {os.path.getsize(output_path)} bytes")
-        return {
-            "message": "Image generated successfully",
-            "filename": filename,
-            "download_url": f"/api/v1/download?file_path=generated/image/{filename}"
-        }
+        r = requests.get(url)
+        r.raise_for_status()
+        image_url = r.json()["urls"]["regular"]
+        img_data = requests.get(image_url).content
+        return Response(content=img_data, media_type="image/jpeg")
 
     except Exception as e:
-        print(f"❌ Image generation failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Image fetch failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Image generation failed.")

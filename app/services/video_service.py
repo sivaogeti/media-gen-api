@@ -1,67 +1,94 @@
 # app/services/video_service.py
 
-import cv2
-import numpy as np
 import os
 import uuid
-import math
+import requests
 from gtts import gTTS
 from mutagen.mp3 import MP3
-import subprocess
+from moviepy.editor import ImageClip, concatenate_videoclips, AudioFileClip
+from dotenv import load_dotenv
+
+load_dotenv()
+
+UNSPLASH_KEY = os.getenv("UNSPLASH_ACCESS_KEY")
+UNSPLASH_API = "https://api.unsplash.com/photos/random"
+
+def fetch_unsplash_images(query, count=3):
+    headers = {"Accept-Version": "v1", "Authorization": f"Client-ID {UNSPLASH_KEY}"}
+    urls = []
+
+    for _ in range(count):
+        r = requests.get(UNSPLASH_API, params={"query": query}, headers=headers)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, dict):
+                urls.append(data["urls"]["regular"])
+            elif isinstance(data, list) and len(data) > 0:
+                urls.append(data[0]["urls"]["regular"])
+    return urls
 
 def generate_video_file(script: str, duration: int = None) -> str:
-    # Paths
-    audio_filename = f"generated/audio/audio_{uuid.uuid4().hex}.mp3"
-    raw_video_path = f"generated/video/video_{uuid.uuid4().hex}.mp4"
-    final_video_path = raw_video_path.replace(".mp4", "_final.mp4")
+    os.makedirs("generated/video", exist_ok=True)
+    os.makedirs("generated/audio", exist_ok=True)
+    os.makedirs("generated/tmp", exist_ok=True)
 
-    # Ensure directories exist
-    os.makedirs(os.path.dirname(audio_filename), exist_ok=True)
-    os.makedirs(os.path.dirname(raw_video_path), exist_ok=True)
+    video_filename = f"video_{uuid.uuid4().hex}.mp4"
+    video_path = os.path.join("generated/video", video_filename)
+    audio_path = f"generated/audio/audio_{uuid.uuid4().hex}.mp3"
 
-    # Generate audio
+    # Step 1: Generate audio
     tts = gTTS(text=script, lang='en')
-    tts.save(audio_filename)
+    tts.save(audio_path)
 
-    # Get accurate audio duration
-    audio = MP3(audio_filename)
-    audio_duration = audio.info.length  # e.g., 5.98 seconds
+    # Get audio duration (fallback if 0)
+    audio = MP3(audio_path)
+    audio_duration = max(audio.info.length, 3.0)  # ensure at least 3s
 
-    # Video specs
-    fps = 25  # Higher FPS = smoother video
-    total_frames = int(audio_duration * fps)
-    width, height = 640, 480
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(raw_video_path, fourcc, fps, (width, height))
+    # Step 2: Fetch Unsplash images
+    images = fetch_unsplash_images(script, count=3)
+    if not images:
+        raise Exception("No images found from Unsplash for the prompt")
 
-    # Create each frame
-    for _ in range(total_frames):
-        frame = np.ones((height, width, 3), dtype=np.uint8) * 255
-        cv2.putText(frame, script, (30, height // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
-        out.write(frame)
+    # Step 3: Create slideshow clips
+    clips = []
+    per_image_duration = audio_duration / len(images)
+    tmp_files = []
 
-    out.release()
+    for url in images:
+        img_data = requests.get(url).content
+        tmp_file = f"generated/tmp/tmp_{uuid.uuid4().hex}.jpg"
+        tmp_files.append(tmp_file)
 
-    # Merge audio and video
-    ffmpeg_cmd = [
-        "ffmpeg",
-        "-y",
-        "-i", raw_video_path,
-        "-i", audio_filename,
-        "-c:v", "libx264",
-        "-c:a", "aac",
-        "-crf", "23",
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "-shortest",        
-        "-movflags", "+faststart",  # 👈 crucial for browser playback
-        final_video_path
-    ]
+        with open(tmp_file, "wb") as f:
+            f.write(img_data)
 
-    try:
-        subprocess.run(ffmpeg_cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"FFmpeg failed: {e}")
-        return None
+        clip = ImageClip(tmp_file).resize(height=720).set_duration(per_image_duration)
+        clips.append(clip)
 
-    return os.path.basename(final_video_path)
+    # Step 4: Concatenate without negative padding
+    final_clip = concatenate_videoclips(clips, method="compose")
+
+    # Step 5: Force duration to match audio
+    final_clip = final_clip.set_duration(audio_duration)
+
+    # Step 6: Add audio
+    final_clip = final_clip.set_audio(AudioFileClip(audio_path))
+
+    # Step 7: Export video
+    final_clip.write_videofile(
+        video_path,
+        fps=24,
+        codec="libx264",
+        audio_codec="aac",
+        threads=4,
+        preset="ultrafast"
+    )
+
+    # Cleanup
+    for file in tmp_files:
+        try:
+            os.remove(file)
+        except:
+            pass
+
+    return video_filename
