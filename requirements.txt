@@ -9,9 +9,14 @@ moviepy==1.0.3
 srt
 fastapi
 uvicorn
-
+gtts
+pydantic
+mutagen
+requests
 # Required moviepy dependencies
 imageio
 imageio-ffmpeg
 decorator
 tqdm
+python-multipart
+opencv-python-headless
